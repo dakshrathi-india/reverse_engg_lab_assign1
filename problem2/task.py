@@ -23,7 +23,7 @@ class RE:
         return 1 / (1 + np.exp(-X))
 
     # task1
-    def plot_decision_boundary(self, filename="decision_boundary.png"):
+    def plot_decision_boundary(self, ax):
         # Finds the p(class 1) = 0.5 boundary and saves its plot.
         x1 = np.linspace(-5, 5, 200)
         x2 = np.linspace(-5, 5, 200)
@@ -38,7 +38,7 @@ class RE:
         class_grid = pred_class.reshape(X1.shape)
         prob_grid = pred_prob.reshape(X1.shape)
 
-        fig, ax = plt.subplots(1, 1, figsize=(14, 6))
+        fig = ax.figure
         ax.contourf(X1, X2, class_grid, levels=[-0.5, 0.5, 1.5], alpha=0.2)
         p = ax.scatter(X[:, 0], X[:, 1], c=pred_prob, s=5)
         ax.contour(X1, X2, prob_grid, levels=[0.5], colors="red", linewidths=2)
@@ -47,8 +47,6 @@ class RE:
         ax.set_ylabel("x2")
 
         fig.colorbar(p, ax=ax, label="Probability of Class 1")
-        fig.tight_layout()
-        fig.savefig(filename, dpi=150, bbox_inches="tight")
 
         return fig, ax
 
@@ -136,12 +134,12 @@ class RE:
             "most_important_feature": int(most_important),
         }
 
-    def plot_feature_importance(self, filename="feature_importance.png"):
+    def plot_feature_importance(self, ax):
         # Plots and saves the normalized importance of both features.
         result = self.compute_feature_importance()
         importance = result["normalized_importance"]
 
-        fig, ax = plt.subplots(figsize=(6, 5))
+        fig = ax.figure
         ax.bar(
             ["Feature1", "Feature2"],
             importance,
@@ -151,8 +149,6 @@ class RE:
         ax.set_ylabel("Normalized Importance")
         ax.set_ylim(0, 1)
 
-        fig.tight_layout()
-        fig.savefig(filename, dpi=150, bbox_inches="tight")
         return fig, ax
 
     def interaction_detection(self, sample=100, step=0.5, tolerance=1e-6, seed=42):
@@ -233,9 +229,9 @@ class RE:
 
     def plot_confidence_heatmap(
         self,
+        ax,
         grid_limit=5,
         grid_size=200,
-        filename="confidence_heatmap.png",
     ):
         # Plots and saves prediction confidence over the input grid.
         x1 = np.linspace(-grid_limit, grid_limit, grid_size)
@@ -249,7 +245,7 @@ class RE:
         prob_grid = actual_prob.reshape(X1.shape)
         confidence_grid = confidence.reshape(X1.shape)
 
-        fig, ax = plt.subplots(figsize=(7, 6))
+        fig = ax.figure
         # heatmap will be used in the colorbar
         heatmap = ax.contourf(
             X1,
@@ -264,21 +260,15 @@ class RE:
         ax.set_ylabel("Feature2")
 
         fig.colorbar(heatmap, ax=ax, label="Prediction confidence")
-        fig.tight_layout()
-        fig.savefig(filename, dpi=150, bbox_inches="tight")
 
         return fig, ax
 
-    def plot_coefficient_recovery(
-        self,
-        true_coeff,
-        filename="coefficient_recovery.png",
-    ):
+    def plot_coefficient_recovery(self, true_coeff, ax):
         # Compares true and recovered coefficients and saves their plot.
         recover = self.recover_coefficients()
         est_coeff = recover["coefficients"]
 
-        fig, ax = plt.subplots(figsize=(7, 6))
+        fig = ax.figure
         positions = np.arange(2)
         labels = ["Feature1", "Feature2"]
         true_coeff = np.asarray(true_coeff, dtype=float).reshape(-1)
@@ -304,9 +294,6 @@ class RE:
         ax.axhline(0, color="black", linewidth=0.8)
         ax.set_title("True vs Recovered Coefficients")
         ax.legend()
-
-        fig.tight_layout()
-        fig.savefig(filename, dpi=150, bbox_inches="tight")
 
         return fig, ax, float(coeff_error)
 

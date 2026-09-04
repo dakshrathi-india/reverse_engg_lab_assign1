@@ -10,125 +10,57 @@ PREPROCESSOR_FILE = "neural_network_mnist_20260901_210852_preprocessing.joblib"
 
 
 def apply_preprocessor(preprocessor, X):
-    # Applies either a direct transformer or transformers stored in a dictionary.
-    if hasattr(preprocessor, "transform"):
-        transformed = preprocessor.transform(X)
-    elif isinstance(preprocessor, dict):
-        transformed = None
-
-        for key in ("preprocessor", "transformer", "pipeline"):
-            if key in preprocessor and hasattr(preprocessor[key], "transform"):
-                transformed = preprocessor[key].transform(X)
-                break
-
-        if transformed is None:
-            transformed = X
-            used_transformer = False
-            for key in ("scaler", "pca"):
-                if key in preprocessor and hasattr(preprocessor[key], "transform"):
-                    transformed = preprocessor[key].transform(transformed)
-                    used_transformer = True
-
-            if not used_transformer:
-                raise ValueError(
-                    "No usable transformer was found in the preprocessor file"
-                )
-    else:
-        raise TypeError("The supplied preprocessor does not provide transform()")
-
-    if hasattr(transformed, "toarray"):
-        transformed = transformed.toarray()
-
-    return np.asarray(transformed, dtype=np.float32)
+    # Confirmed preprocessing order: scaler -> PCA.
+    X = preprocessor["scaler"].transform(X)
+    X = preprocessor["pca"].transform(X)
+    return np.asarray(X, dtype=np.float32)
 
 
 def prepare_mnist(model, preprocessor):
-    # Finds the correct pixel scaling and zero/non-zero output-label mapping.
+    # Confirmed setup: normalized pixels and class 1 = zero.
     (_, _), (images, digit_labels) = tf.keras.datasets.mnist.load_data()
-    flat_images = images.reshape(len(images), -1).astype(np.float32)
 
-    best_result = None
-    candidates = {
-        "normalized [0,1]": flat_images / 255.0,
-        "raw [0,255]": flat_images,
-    }
+    X = images.reshape(len(images), -1).astype(np.float32) / 255.0
+    X = apply_preprocessor(preprocessor, X)
 
-    for scale_name, candidate in candidates.items():
-        try:
-            processed = apply_preprocessor(preprocessor, candidate)
-            probability = np.asarray(
-                model.predict(processed, verbose=0), dtype=float
-            ).reshape(-1)
-            predicted_class = (probability >= 0.5).astype(int)
+    y = (digit_labels == 0).astype(int)
+    accuracy = np.mean((model.predict(X, verbose=0).reshape(-1) >= 0.5) == y)
 
-            nonzero_labels = (digit_labels != 0).astype(int)
-            zero_labels = (digit_labels == 0).astype(int)
-            nonzero_accuracy = np.mean(predicted_class == nonzero_labels)
-            zero_accuracy = np.mean(predicted_class == zero_labels)
-
-            if nonzero_accuracy >= zero_accuracy:
-                binary_labels = nonzero_labels
-                mapping = "class 1 = non-zero, class 0 = zero"
-                accuracy = nonzero_accuracy
-            else:
-                binary_labels = zero_labels
-                mapping = "class 1 = zero, class 0 = non-zero"
-                accuracy = zero_accuracy
-
-            if best_result is None or accuracy > best_result[0]:
-                best_result = (
-                    accuracy,
-                    processed,
-                    binary_labels,
-                    digit_labels,
-                    scale_name,
-                    mapping,
-                )
-        except (TypeError, ValueError):
-            continue
-
-    if best_result is None:
-        raise ValueError("The MNIST data could not be transformed by the preprocessor")
-
-    return best_result
+    return X, y, digit_labels, accuracy
 
 
-def create_balanced_sample(X, binary_labels, digit_labels, each_class=500, seed=42):
-    # Returns an equal number of zero and non-zero images for fair analysis.
+def create_balanced_sample(X, y, digit_labels, each_class=500, seed=42):
     rng = np.random.default_rng(seed)
-    zero_indices = np.where(digit_labels == 0)[0]
-    nonzero_indices = np.where(digit_labels != 0)[0]
 
-    count = min(each_class, len(zero_indices), len(nonzero_indices))
-    indices = np.concatenate(
-        [
-            rng.choice(zero_indices, count, replace=False),
-            rng.choice(nonzero_indices, count, replace=False),
-        ]
+    zero_indices = rng.choice(np.where(digit_labels == 0)[0], each_class, replace=False)
+    nonzero_indices = rng.choice(
+        np.where(digit_labels != 0)[0], each_class, replace=False
     )
+
+    indices = np.concatenate([zero_indices, nonzero_indices])
     rng.shuffle(indices)
 
-    return X[indices], binary_labels[indices]
+    return X[indices], y[indices]
 
 
 def main():
     model = tf.keras.models.load_model(MODEL_FILE, compile=False)
     preprocessor = joblib.load(PREPROCESSOR_FILE)
 
-    result = prepare_mnist(model, preprocessor)
-    accuracy, X, y, digit_labels, scale_name, mapping = result
+    X, y, digit_labels, accuracy = prepare_mnist(model, preprocessor)
     X_analysis, y_analysis = create_balanced_sample(X, y, digit_labels)
 
-    print("Selected input scaling:", scale_name)
-    print("Detected label mapping:", mapping)
-    print("Model accuracy using this mapping:", float(accuracy))
+    print("Input scaling: normalized [0,1]")
+    print("Preprocessing order: scaler -> PCA")
+    print("Label mapping: class 1 = zero, class 0 = non-zero")
+    print("Model accuracy:", float(accuracy))
     print("Processed input shape:", X.shape)
     print("Analysis sample shape:", X_analysis.shape)
     print()
 
     re = RE(model)
 
-    # Task 1: input-feature importance.
+    # Task 1: input-feature importance
     input_importance = re.compute_input_importance(X_analysis)
     print("Top-10 input features:", input_importance["top_10_features"])
     print(
@@ -136,7 +68,7 @@ def main():
         input_importance["normalized_importance"][input_importance["ranking"][:10]],
     )
 
-    # Tasks 2 and 3: hidden-layer activation analysis.
+    # Tasks 2 and 3: hidden-layer activation analysis
     first_layer = re.analyze_layer(X_analysis, y_analysis, layer_id=1)
     second_layer = re.analyze_layer(X_analysis, y_analysis, layer_id=2)
     tsne_result = re.compute_tsne_projection(second_layer)
@@ -151,40 +83,32 @@ def main():
     print("Second-layer redundant pairs:", second_layer["redundant_pairs"])
     print("Second-layer silhouette score:", second_layer["silhouette_score"])
 
-    # Task 4: pairwise input-feature interactions.
+    # Task 4: pairwise input-feature interactions
     interactions = re.detect_feature_interactions(X_analysis)
     print("Maximum interaction:", interactions["maximum_interaction"])
     print("Top feature interactions:", interactions["top_interactions"])
 
-    # Required neuron-contribution and pruning experiments use hidden layer 2.
+    # Neuron contribution and pruning analysis on hidden layer 2
     contributions = re.compute_neuron_contributions(second_layer)
-    pruning = re.layer_pruning_analysis(X_analysis, y_analysis, second_layer)
+    pruning = re.layer_pruning_analysis(y_analysis, second_layer)
+
     print("Second-layer neuron ranking:", contributions["ranking"])
     print("Pruning order:", pruning["removal_order"])
     print("Retained neurons:", pruning["retained_neurons"])
     print("Accuracy after pruning:", pruning["accuracy"])
 
-    # Save all six plots individually.
-    figures = []
-    figures.append(re.plot_feature_importance_bar(input_importance)[0])
-    figures.append(re.plot_layer_activations(first_layer)[0])
-    figures.append(re.plot_hidden_layer_tsne(tsne_result)[0])
-    figures.append(re.plot_interaction_matrix(interactions)[0])
-    figures.append(re.plot_neuron_contributions(contributions)[0])
-    figures.append(re.plot_layer_pruning_analysis(pruning)[0])
+    # One combined figure only. All axes are created here and passed to task.py.
+    fig, axes = plt.subplots(2, 3, figsize=(16, 12))
 
-    for fig in figures:
-        plt.close(fig)
+    re.plot_feature_importance_bar(input_importance, axes[0, 0])
+    re.plot_layer_activations(first_layer, axes[0, 1])
+    re.plot_hidden_layer_tsne(tsne_result, axes[0, 2])
+    re.plot_interaction_matrix(interactions, axes[1, 0])
+    re.plot_neuron_contributions(contributions, axes[1, 1])
+    re.plot_layer_pruning_analysis(pruning, axes[1, 2])
 
-    # Save and display the combined six-panel assignment figure.
-    re.plot_network_analysis(
-        input_importance,
-        first_layer,
-        tsne_result,
-        interactions,
-        contributions,
-        pruning,
-    )
+    fig.tight_layout()
+    fig.savefig("network_analysis.png", dpi=150, bbox_inches="tight")
     plt.show()
 
 
