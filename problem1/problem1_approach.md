@@ -181,7 +181,7 @@ No changing slopes or pairwise interactions were detected at the tested points f
 
 ## Model-Behaviour Visualization
 
-The `plot_model_behaviour()` function creates a three-dimensional grid using 20 values for each feature over $[-1,1]$. Each point's coordinates represent $(x_1,x_2,x_3)$, while its colour represents the predicted output.
+The `plot_model_behaviour()` function creates a three-dimensional grid using 10 values for each feature over $[-1,1]$. Each point's coordinates represent $(x_1,x_2,x_3)$, while its colour represents the predicted output.
 
 Two 3D scatter plots are displayed:
 
