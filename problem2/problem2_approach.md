@@ -69,52 +69,87 @@ The function saves the following plot:
 
 ## Task 2: Recover the Model Coefficients
 
-The `recover_coefficients()` function queries the model at three points:
+The `recover_coefficients()` function first evaluates the model over a `200 × 200` grid in the range `[-5,5] × [-5,5]`.
 
-| Input | Logit value |
-| --- | --- |
-| $[0,0]$ | $b$ |
-| $[1,0]$ | $b+w_1$ |
-| $[0,1]$ | $b+w_2$ |
+For every grid point, the probability of class 1 is obtained. The 500 points whose probabilities are closest to `0.5` are selected:
 
-Therefore, the parameters are recovered as
+```math
+|P(y=1\mid x)-0.5|
+```
 
-$$
-\begin{aligned}
-b &= \operatorname{logit}(P(y=1\mid [0,0])),\\
-w_1 &= \operatorname{logit}(P(y=1\mid [1,0]))-b,\\
-w_2 &= \operatorname{logit}(P(y=1\mid [0,1]))-b.
-\end{aligned}
-$$
+These points lie closest to the decision boundary.
 
-The recovered parameters are then used to calculate probabilities over the same $[-5,5]\times[-5,5]$ grid:
+The selected probabilities are converted into logits using
 
-$$
+```math
+\operatorname{logit}(p)=\log\left(\frac{p}{1-p}\right).
+```
+
+For logistic regression,
+
+```math
+\operatorname{logit}(p_i)=b+w_1x_{i1}+w_2x_{i2}.
+```
+
+Therefore, for the selected near-boundary points, a linear system is formed:
+
+```math
+A\theta \approx z
+```
+
+where each row of `A` is
+
+```math
+[1,x_{i1},x_{i2}]
+```
+
+and
+
+```math
+\theta=[b,w_1,w_2]^T.
+```
+
+The intercept and coefficients are recovered by solving this overdetermined system using least squares with `np.linalg.lstsq()`.
+
+The recovered parameters are then used to calculate probabilities over the complete `[-5,5] × [-5,5]` grid:
+
+```math
 P_{\text{recovered}}=\sigma(b+Xw).
-$$
+```
 
 ### Probability Recovery Error
 
 The probability MSE compares the black-box probabilities with the recovered probabilities:
 
-$$
+```math
 \operatorname{MSE}_{\text{probability}}
-=\frac{1}{n}\sum_{i=1}^{n}
-\left(P_{\text{model}}^{(i)}-P_{\text{recovered}}^{(i)}\right)^2.
-$$
+=
+\frac{1}{n}
+\sum_{i=1}^{n}
+\left(
+P_{\text{model}}^{(i)}
+-
+P_{\text{recovered}}^{(i)}
+\right)^2.
+```
 
 A value close to zero means that the recovered equation reproduces the model's probabilities accurately.
 
 ### Decision-Boundary Accuracy
 
-The recovered class is taken as class 1 when the recovered probability is at least 0.5. Decision-boundary accuracy is the fraction of grid points for which the recovered and black-box classes agree:
+The recovered class is taken as class 1 when the recovered probability is at least `0.5`.
 
-$$
+Decision-boundary accuracy is the fraction of grid points for which the recovered and black-box classes agree:
+
+```math
 \operatorname{BoundaryAccuracy}
-=\frac{\text{number of matching predictions}}{\text{total predictions}}.
-$$
+=
+\frac{\text{number of matching predictions}}
+{\text{total predictions}}.
+```
 
 An accuracy close to 1 means that the recovered decision boundary closely matches the model's boundary.
+
 
 ## Task 3: Feature-Importance Analysis
 
@@ -239,7 +274,7 @@ Running `python main.py` with the supplied model produced the following results:
 | --- | --- |
 | Recovered coefficients | $[-3.3223869,\ -1.8519834]$ |
 | Recovered intercept | $0.2748229304818315$ |
-| Probability MSE | $3.161790842801487\times10^{-33}$ |
+| Probability MSE | $1.8539682149355565\times10^{-32}$ |
 | Decision-boundary accuracy | $1.0$ or $100\%$ |
 | Raw feature importance | $[0.04633039,\ 0.02569495]$ |
 | Normalized feature importance | $[0.64325127,\ 0.35674873]$ |

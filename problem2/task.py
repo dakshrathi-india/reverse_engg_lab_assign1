@@ -52,22 +52,7 @@ class RE:
 
     # task2
     def recover_coefficients(self):
-        # Recovers w1, w2 and b and returns probability MSE and boundary accuracy.
-        X = np.array(
-            [
-                [0, 0],
-                [1, 0],
-                [0, 1],
-            ]
-        )
-        p = self.class1_prob(X)
-        logit = self.prob_to_logit(p)
-
-        # Model: z = w1*x1 + w2*x2 + b.
-        intercept = logit[0]
-        w1 = logit[1] - intercept
-        w2 = logit[2] - intercept
-        coeff = np.array([w1, w2])
+        # Recovers logistic coefficients using points closest to the decision boundary.
 
         x1 = np.linspace(-5, 5, 200)
         x2 = np.linspace(-5, 5, 200)
@@ -75,12 +60,31 @@ class RE:
         X = np.column_stack([X1.reshape(-1), X2.reshape(-1)])
 
         actual_prob = self.class1_prob(X)
+
+        indices = np.argsort(np.abs(actual_prob - 0.5))[:500]
+        boundary_X = X[indices]
+        boundary_prob = actual_prob[indices]
+
+        logits = self.prob_to_logit(boundary_prob)
+
+        A = np.column_stack([
+            np.ones(len(boundary_X)),
+            boundary_X
+        ])
+
+        parameters = np.linalg.lstsq(A, logits, rcond=None)[0]
+
+        intercept = parameters[0]
+        coeff = parameters[1:]
+
         recover_logit = intercept + X @ coeff
         recover_prob = self.sigmoid(recover_logit)
+
         prob_mse = np.mean((actual_prob - recover_prob) ** 2)
 
         actual_class = np.asarray(self.model.predict(X), dtype=int).reshape(-1)
         recover_class = (recover_prob >= 0.5).astype(int)
+
         bound_acc = np.mean(actual_class == recover_class)
 
         return {
